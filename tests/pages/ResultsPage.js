@@ -1,97 +1,151 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// ResultsPage.js — Page Object Model para la página de resultados de Liverpool
+//
+// Maneja tres responsabilidades:
+//   1. Aplicar el filtro de color "Blanco"
+//   2. Ordenar resultados de menor a mayor precio
+//   3. Extraer nombre y precio de los primeros 5 productos
+// ─────────────────────────────────────────────────────────────────────────────
 class ResultsPage {
   constructor(page) {
     this.page = page;
-    // Selector por texto exacto para el color Blanco
-    this.whiteColorFilter = page.locator('text="Blanco"').first();
-    // Selector del botón o contenedor de ordenamiento
-    this.sortButton = page.locator('#sortby, .sortBy, [class*="sort"]').first();
-    // Opción menor precio
-    this.lowestPriceOption = page.locator('text="Menor precio", [data-value="price|0"]').first();
   }
 
+  // ── FILTRO DE COLOR ────────────────────────────────────────────────────────
   async filterByWhiteColor() {
-    await this.whiteColorFilter.waitFor({ state: 'visible', timeout: 15000 });
-    await this.whiteColorFilter.click({ force: true });
-    // Espera para que el catálogo aplique el filtro asíncronamente
-    await this.page.waitForTimeout(4000);
-  }
+    // Liverpool muestra sugerencias de filtro como chips horizontales.
+    // Inspeccionando el DOM encontramos que la clase real es "newPlpChip"
+    // Ejemplo HTML: <div class="newPlpChip">Blanco</div>
+    const chipLocator = this.page
+      .locator('div.newPlpChip, .newPlpChip')
+      .filter({ hasText: /^Blanco$/ }) // texto exacto "Blanco", sin otras palabras
+      .first();
 
-  async sortByPriceLowestToHighest() {
-    await this.sortButton.waitFor({ state: 'attached', timeout: 15000 });
-    
     try {
-      // Intentamos la interacción limpia por UI primero
-      await this.sortButton.click({ force: true, timeout: 4000 });
-      await this.page.waitForTimeout(1500);
-      await this.lowestPriceOption.click({ force: true, timeout: 4000 });
-    } catch (uiError) {
-      console.log("⚠️ Botón visual bloqueado por responsividad. Aplicando bypass por URL nativa...");
-      const currentUrl = this.page.url();
-      
-      if (!currentUrl.includes('sortBy')) {
-        const separator = currentUrl.includes('?') ? '&' : '?';
-        await this.page.goto(`${currentUrl}${separator}sortBy=price|0`, { waitUntil: 'domcontentloaded' });
-      } else {
-        await this.page.evaluate(() => {
-          const sortElement = document.getElementById('sortby-selector') || document.getElementById('sortby');
-          if (sortElement) {
-            if (sortElement.tagName === 'SELECT') {
-              sortElement.value = 'price|0';
-              sortElement.dispatchEvent(new Event('change', { bubbles: true }));
-            } else {
-              sortElement.click();
-            }
-          }
-        });
-      }
+      // Espera a que el chip sea visible (puede tardar si la página carga lento)
+      await chipLocator.waitFor({ state: 'visible', timeout: 10000 });
+
+      // scrollIntoViewIfNeeded: desplaza la página hasta el chip si está
+      // fuera de la pantalla (Liverpool tiene scroll horizontal en los chips)
+      await chipLocator.scrollIntoViewIfNeeded();
+
+      // force:true hace click aunque el elemento esté parcialmente cubierto
+      await chipLocator.click({ force: true });
+      console.log('✅ Filtro Blanco aplicado (div.newPlpChip)');
+
+      // Pausa para que la página recargue los resultados filtrados
+      await this.page.waitForTimeout(3000);
+    } catch (e) {
+      console.log('⚠️ No se encontró el chip Blanco:', e.message);
     }
-    // Tiempo de asentamiento del DOM tras ordenar
-    await this.page.waitForTimeout(5000);
   }
 
-  async getFirstFiveProducts() {
-    const products = [];
-    
-    await this.page.waitForSelector('.m-product__card, [class*="product-card"], .o-card__prod', { state: 'attached', timeout: 15000 });
-    
-    const cards = this.page.locator('.m-product__card, [class*="product-card"], .o-card__prod');
-    const totalFound = await cards.count();
-    const limit = Math.min(totalFound, 5);
+  // ── ORDENAR POR PRECIO ────────────────────────────────────────────────────
+  async sortByPriceLowestToHighest() {
+    try {
+      // Liverpool acepta el parámetro sortBy en la URL.
+      // Es más confiable que hacer click en el dropdown de la UI,
+      // ya que el <select> a veces no es visible en modo headless
+      const currentUrl = this.page.url();
 
-    console.log(`📊 Extrayendo los primeros ${limit} productos del catálogo...`);
+      // Eliminar cualquier sortBy previo para no duplicar el parámetro
+      const cleanUrl = currentUrl.replace(/[&?]sortBy=[^&]*/g, '');
+
+      // Agregar el nuevo parámetro: price|0 = menor a mayor precio
+      const separator = cleanUrl.includes('?') ? '&' : '?';
+      const sortedUrl = `${cleanUrl}${separator}sortBy=price%7C0`;
+
+      // Navegar a la URL con el sort aplicado
+      await this.page.goto(sortedUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await this.page.waitForTimeout(2000);
+      console.log('✅ Ordenado por precio menor a mayor (URL)');
+    } catch (e) {
+      console.log('⚠️ Sort no aplicado:', e.message);
+    }
+  }
+
+  // ── EXTRACCIÓN DE PRODUCTOS ───────────────────────────────────────────────
+  async getFirstFiveProducts() {
+    // Lista de selectores posibles para las tarjetas de producto.
+    // Probamos en orden hasta encontrar el que funcione en la versión actual del sitio
+    const productSelectors = [
+      '.m-product__card',
+      '[class*="product-card"]',
+      '[class*="ProductCard"]',
+      '.o-card__prod',
+    ];
+
+    // Encontrar cuál selector funciona en esta carga de página
+    let workingSelector = null;
+    for (const sel of productSelectors) {
+      try {
+        await this.page.waitForSelector(sel, { state: 'attached', timeout: 8000 });
+        workingSelector = sel;
+        break;
+      } catch (e) {}
+    }
+
+    if (!workingSelector) {
+      console.log('⚠️ No se encontraron tarjetas de producto');
+      return [];
+    }
+
+    const cards = this.page.locator(workingSelector);
+    const total = await cards.count();
+    const limit = Math.min(total, 5); // Máximo 5 productos según el challenge
+    console.log(`📊 Extrayendo los primeros ${limit} productos...`);
+
+    const products = [];
 
     for (let i = 0; i < limit; i++) {
-      const card = cards.nth(i);
-      
-      // 1. Obtener Nombre
-      let nameText = "Producto sin nombre";
-      const titleLocator = card.locator('.card-title, h5, [class*="card-title"], .a-card__description').first();
-      if (await titleLocator.count() > 0) {
-        nameText = await titleLocator.innerText();
-      }
-      
-      // 2. Obtener Precio de manera blindada
-      let priceText = "0";
-      const discountPrice = card.locator('.a-card-discountPrice, .a-card__price').first();
-      const normalPrice = card.locator('.a-card-price, [class*="price"]').first();
-      
-      if (await discountPrice.count() > 0) {
-        priceText = await discountPrice.innerText();
-      } else if (await normalPrice.count() > 0) {
-        priceText = await normalPrice.innerText();
-      }
-      
-      // Sanitización matemática: Extrae el formato numérico base ignorando centavos duplicados del DOM
-      let match = priceText.replace(/,/g, '').match(/\d+/);
-      const price = match ? parseFloat(match[0]) : 0;
+      const card = cards.nth(i); // Tarjeta número i
 
-      products.push({
-        name: nameText.trim(),
-        price: price
-      });
+      // ── Extraer nombre ──────────────────────────────────────────────────
+      let name = 'Sin nombre';
+      const nameSelectors = [
+        '.card-title', 'h5', '[class*="card-title"]',
+        '.a-card__description', '[class*="description"]', '[class*="name"]',
+      ];
+      for (const sel of nameSelectors) {
+        try {
+          const el = card.locator(sel).first();
+          if (await el.count() > 0) {
+            const text = (await el.innerText()).trim();
+            if (text) { name = text; break; }
+          }
+        } catch (e) {}
+      }
+
+      // ── Extraer precio ──────────────────────────────────────────────────
+      // Liverpool almacena algunos precios en centavos × 100 en el DOM
+      // Ej: el valor raw 2202600 = $22,026.00 MXN (hay que dividir entre 100)
+      // Otros productos no muestran precio en la tarjeta → devuelven $0
+      let price = 0;
+      const priceSelectors = [
+        '.a-card-discountPrice', '.a-card__price',
+        '.a-card-price', '[class*="price"]', '[class*="Price"]',
+      ];
+      for (const sel of priceSelectors) {
+        try {
+          const el = card.locator(sel).first();
+          if (await el.count() > 0) {
+            const text = await el.innerText();
+            const cleaned = text.replace(/[$,\s]/g, '');
+            const match = cleaned.match(/(\d+)\.?(\d{0,2})/);
+            if (match) {
+              const raw = parseFloat(cleaned.replace(/[^\d.]/g, ''));
+              // Si tiene más de 6 dígitos, está en centavos → dividir entre 100
+              price = raw > 100000 ? raw / 100 : raw;
+              if (price > 0) break;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Guardamos el precio formateado como string legible en pesos mexicanos
+      products.push({ name, price: `$${price.toLocaleString('es-MX')}` });
     }
-    
-    console.log("✅ Productos extraídos con éxito.");
+
     return products;
   }
 }

@@ -1,14 +1,19 @@
 {
   "name": "examen-hsbc",
   "version": "1.0.0",
-  "description": "",
+  "description": "Liverpool E2E Automation Challenge - HSBC/Hitss",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "cross-env HEADED=true playwright test",
+    "test:report": "playwright show-report"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
-    "@types/node": "^25.9.3"
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.0.0",
+    "cross-env": "^7.0.3"
   }
 }
