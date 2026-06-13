@@ -1,32 +1,28 @@
 class HomePage {
   constructor(page) {
     this.page = page;
-    // Localizador flexible y tolerante para la barra de búsqueda
-    this.searchBar = page.locator('input#mainSearchbar, input[placeholder*="Buscar"]').first();
+    // Buscamos con un selector más amplio
+    this.searchBar = page.locator('input[type="text"], input[name="search"], input[placeholder*="Buscar"]');
   }
 
   async navigate() {
-    // Navegación limpia configurando un User-Agent normal para mitigar bloqueos
-    await this.page.goto('https://www.liverpool.com.mx/', { waitUntil: 'load', timeout: 30000 });
-    await this.page.waitForLoadState('domcontentloaded');
+    // Usamos 'networkidle' para asegurar que los scripts de tracking y seguridad carguen primero
+    await this.page.goto('https://www.liverpool.com.mx/', { waitUntil: 'networkidle', timeout: 45000 });
   }
 
   async searchFor(product) {
-    // Esperamos explícitamente a que esté visible antes de interactuar
-    await this.searchBar.waitFor({ state: 'visible', timeout: 20000 });
+    // Intentamos encontrar el elemento con una espera mayor
+    const input = this.searchBar.first();
+    await input.waitFor({ state: 'attached', timeout: 30000 });
     
-    // Simulamos interacciones humanas básicas para inicializar los scripts de la página
-    await this.searchBar.click();
-    await this.searchBar.focus();
+    // Forzamos la interacción humana simulada
+    await input.scrollIntoViewIfNeeded();
+    await input.click({ force: true }); 
+    await input.fill(product);
+    await this.page.keyboard.press('Enter');
     
-    // Escribimos el producto de forma fluida
-    await this.searchBar.fill(product);
-    
-    // Ejecutamos la búsqueda con el Enter del teclado
-    await this.searchBar.press('Enter');
-    
-    // Le damos un respiro a la plataforma para que pinte los primeros resultados
-    await this.page.waitForTimeout(4000);
+    // Esperamos un tiempo prudente a que la navegación ocurra
+    await this.page.waitForLoadState('networkidle');
   }
 }
 
