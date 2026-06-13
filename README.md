@@ -19,4 +19,4 @@ Asegúrate de tener instalado lo siguiente en tu equipo:
 ## 📦 Instalación
 1. Clonar este repositorio en tu máquina local:
    ```bash
-   git clone <AQUÍ_VAS_A_PONER_EL_LINK_DE_TU_GITHUB_MÁS_ADELANTE>
+git clone https://github.com/AlanRamirez-seal/examen-hsbc-liverpool.git
