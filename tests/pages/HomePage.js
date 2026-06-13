@@ -1,60 +1,69 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // HomePage.js — Page Object Model para la página de inicio de Liverpool
 //
-// El patrón Page Object Model (POM) separa la lógica de interacción con el DOM
-// del código del test. Ventaja: si Liverpool cambia un selector, solo editas
-// este archivo, no todos los tests que lo usen.
+// Estrategia de búsqueda doble:
+//   - Local (Chrome real): usa la barra de búsqueda de la UI
+//   - CI (Chromium headless): navega directo a la URL de resultados
+//     porque Akamai bloquea la home page en servidores de CI
 // ─────────────────────────────────────────────────────────────────────────────
 class HomePage {
   constructor(page) {
-    // 'page' es el objeto de Playwright que representa la pestaña del navegador
     this.page = page;
   }
 
   async navigate() {
-    // Navega a la página de inicio de Liverpool
-    // Usamos 'domcontentloaded' en lugar de 'networkidle' porque Liverpool
-    // nunca termina de cargar (tiene trackers y scripts eternos), y 'networkidle'
-    // esperaría para siempre causando un timeout
+    // En CI saltamos la home directamente al buscar, así que este método
+    // solo se usa en local. De igual forma lo dejamos liviano.
     await this.page.goto('https://www.liverpool.com.mx/', {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
-
-    // Pausa breve para que el JS de la página termine de renderizar
-    // y para simular comportamiento humano (evitar detección de bot)
     await this.page.waitForTimeout(2000);
   }
 
   async searchFor(product) {
-    // Busca el campo de búsqueda con múltiples selectores alternativos
-    // por si Liverpool cambia el placeholder o el atributo name
-    const searchInput = this.page.locator(
-      'input[placeholder*="Buscar"], input[placeholder*="buscar"], input[name="Ntt"], input[type="search"]'
-    ).first();
+    const isCI = !!process.env.CI;
 
-    // Espera a que el campo sea visible antes de interactuar
-    await searchInput.waitFor({ state: 'visible', timeout: 20000 });
+    if (isCI) {
+      // ── Estrategia CI ───────────────────────────────────────────────────
+      // En GitHub Actions, Akamai bloquea la home y la barra de búsqueda
+      // nunca llega a ser visible. Navegamos directo a la URL de búsqueda
+      // que Liverpool genera internamente cuando escribes en la barra.
+      console.log('🤖 Modo CI: navegando directo a URL de búsqueda...');
+      const encoded = encodeURIComponent(product);
+      await this.page.goto(
+        `https://www.liverpool.com.mx/tienda/N-1z141f5?s=${encoded}`,
+        { waitUntil: 'domcontentloaded', timeout: 45000 }
+      );
+      // Esperar a que aparezcan productos en pantalla
+      await this.page.waitForSelector(
+        '.m-product__card, [class*="product-card"], [class*="ProductCard"]',
+        { timeout: 30000 }
+      );
+    } else {
+      // ── Estrategia Local (Chrome real) ──────────────────────────────────
+      // En local usamos la barra de búsqueda de la UI para simular
+      // el flujo real del usuario y evitar detección de bot
+      console.log('💻 Modo local: usando barra de búsqueda UI...');
+      const searchInput = this.page.locator(
+        'input[placeholder*="Buscar"], input[placeholder*="buscar"], input[name="Ntt"], input[type="search"]'
+      ).first();
 
-    // Simula escritura humana: click → pausa → escribir letra por letra
-    // Liverpool usa Akamai como sistema anti-bot; escribir con delay
-    // hace que el patrón se parezca más al de un usuario real
-    await searchInput.click();
-    await this.page.waitForTimeout(500);
-    await searchInput.type(product, { delay: 80 }); // 80ms entre cada letra
-    await this.page.waitForTimeout(800);
-    await this.page.keyboard.press('Enter');
+      await searchInput.waitFor({ state: 'visible', timeout: 20000 });
+      await searchInput.click();
+      await this.page.waitForTimeout(500);
+      await searchInput.type(product, { delay: 80 }); // escribe letra por letra
+      await this.page.waitForTimeout(800);
+      await this.page.keyboard.press('Enter');
 
-    // Espera a que aparezcan tarjetas de producto en pantalla
-    // antes de que el siguiente paso intente interactuar con los filtros
-    await this.page.waitForSelector(
-      '.m-product__card, [class*="product-card"], [class*="ProductCard"]',
-      { timeout: 30000 }
-    );
+      await this.page.waitForSelector(
+        '.m-product__card, [class*="product-card"], [class*="ProductCard"]',
+        { timeout: 30000 }
+      );
+    }
 
     console.log(`✅ Búsqueda completada para: ${product}`);
   }
 }
 
-// Exportamos la clase para que Search.spec.js pueda importarla con require()
 module.exports = { HomePage };
