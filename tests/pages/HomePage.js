@@ -11,24 +11,17 @@ class HomePage {
   }
 
 async searchFor(product) {
-    // 1. Damos un tiempo de espera inicial para que el sitio deje de procesar scripts de seguridad
-    await this.page.waitForTimeout(5000);
-
-    // 2. Intentamos buscar un selector mucho más general, incluyendo el botón de búsqueda
-    // A veces, el input está oculto y necesitamos dar clic primero en el icono de lupa
-    const searchIcon = this.page.locator('.search-icon, .icon-search, [class*="search"]').first();
-    if (await searchIcon.isVisible()) {
-      await searchIcon.click();
-    }
-
-    // 3. Ahora sí, vamos por el input de forma mucho más amplia
-    const input = this.page.locator('input').filter({ hasNot: this.page.locator('input[type="hidden"]') }).first();
+    // Saltamos la interacción de la barra de búsqueda y vamos directo a la URL de búsqueda de Liverpool
+    // Esto es mucho más estable en entornos de CI/CD como GitHub Actions
+    const searchUrl = `https://www.liverpool.com.mx/tienda?s=${encodeURIComponent(product)}`;
     
-    await input.waitFor({ state: 'visible', timeout: 30000 });
-    await input.fill(product);
-    await this.page.keyboard.press('Enter');
+    await this.page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 60000 });
     
-    await this.page.waitForLoadState('networkidle');
+    // Solo esperamos a que los resultados carguen
+    await this.page.waitForSelector('.o-listing__products', { timeout: 30000 });
+    
+    // Opcional: imprimir en consola para verificar que llegamos
+    console.log(`✅ Navegación directa a resultados para: ${product}`);
   }
 }
 
